@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"math"
 	"strconv"
 	"time"
 
@@ -15,9 +16,10 @@ import (
 )
 
 type statResponse struct {
-	Status string `json:"status"`
-	ID     int64  `json:"id,omitempty"`
-	Error  string `json:"error,omitempty"`
+	Status string            `json:"status"`
+	ID     int64             `json:"id,omitempty"`
+	Error  string            `json:"error,omitempty"`
+	Errors map[string]string `json:"errors,omitempty"`
 }
 
 func main() {
@@ -55,6 +57,16 @@ func handleHealth(db *sql.DB) http.HandlerFunc {
 	}
 }
 
+var validPlacements = map[string]bool{
+    "placement-video-main":      true,
+    "placement-banner-sidebar": true,
+    "placement-sport-top": true,
+}
+var validActions = map[string]bool{
+    "click":      true,
+    "impression": true,
+//     "view/etc": true,
+}
 func handleStat(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -63,13 +75,49 @@ func handleStat(db *sql.DB) http.HandlerFunc {
 		}
 
 		query := r.URL.Query()
+		validationErrors := make(map[string]string)
+
 		placementID := query.Get("placement")
+		if !validPlacements[placementID] {
+			validationErrors["placement"] = "Unknown {placementID} value"
+		}
+
 		actionType := query.Get("actionType")
+		if !validActions[actionType] {
+		    validationErrors["actionType"] = "Unknown {actionType} value"
+		}
+
 		requestID := query.Get("requestId")
+// 		Думал сделать проверку на пустое значение, но судя по БД и nullableString(),
+//                                      подразумеваю, что пустые значения разрешены
+//
+// 		if requestId == "" {
+// 		    validationErrors["requestId"] = "Field {requestId} is required"
+// 		}
+
 		occurredAt := parseOccurredAt(query.Get("occurredAt"))
 
-		price, _ := strconv.ParseFloat(query.Get("price"), 64)
-		priceCents := int(price)
+		var priceCents int
+		priceStr := query.Get("price")
+		if priceStr == "" {
+		    validationErrors["price"] = "Field {price} is required"
+		} else {
+			price, err := strconv.ParseFloat(priceStr, 64)
+			if err != nil || price < 0 {
+				validationErrors["price"] = "Field {price} need to be correct number"
+			} else {
+				priceCents = int(math.Round(price * 100))
+			}
+		}
+
+		if len(validationErrors) > 0 {
+			writeJSON(w, http.StatusUnprocessableEntity, statResponse{
+				Status: "error",
+				Error:  "validation_failed",
+				Errors: validationErrors,
+			})
+			return
+		}
 
 		var eventID int64
 		err := db.QueryRowContext(
