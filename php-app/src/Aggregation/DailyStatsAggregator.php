@@ -8,6 +8,7 @@ use DateInterval;
 use DateTimeImmutable;
 use DateTimeZone;
 use PDO;
+use Throwable;
 
 final class DailyStatsAggregator
 {
@@ -38,22 +39,37 @@ final class DailyStatsAggregator
         ]);
 
         $rows = $select->fetchAll();
-        $insert = $this->pdo->prepare(
-            'INSERT INTO daily_stats (stat_date, placement_id, impressions, clicks, revenue_cents, updated_at)
+
+        $this->pdo->beginTransaction();
+        try {
+            $insert = $this->pdo->prepare(
+                'INSERT INTO daily_stats (stat_date, placement_id, impressions, clicks, revenue_cents, updated_at)
              VALUES (:stat_date, :placement_id, :impressions, :clicks, :revenue_cents, now())'
-        );
+            );
 
-        foreach ($rows as $row) {
-            $insert->execute([
-                'stat_date' => $date,
-                'placement_id' => $row['placement_id'],
-                'impressions' => (int) $row['impressions'],
-                'clicks' => (int) $row['clicks'],
-                'revenue_cents' => (int) $row['revenue_cents'],
-            ]);
+            $delete = $this->pdo->prepare(
+                'DELETE FROM daily_stats WHERE stat_date = :date');
+            $delete->execute(['date' => $date]);
+
+            foreach ($rows as $row) {
+                $insert->execute([
+                    'stat_date' => $date,
+                    'placement_id' => $row['placement_id'],
+                    'impressions' => (int) $row['impressions'],
+                    'clicks' => (int) $row['clicks'],
+                    'revenue_cents' => (int) $row['revenue_cents'],
+                ]);
+            }
+
+            $this->pdo->commit();
+
+            return count($rows);
+        } catch (Throwable $exception) {
+            $this->pdo->rollback();
+
+            fwrite(STDERR, $exception->getMessage() . "\n");
+            exit(1);
         }
-
-        return count($rows);
     }
 }
 
