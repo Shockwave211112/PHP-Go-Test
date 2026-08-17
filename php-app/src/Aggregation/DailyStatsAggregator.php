@@ -43,13 +43,17 @@ final class DailyStatsAggregator
         $this->pdo->beginTransaction();
         try {
             $insert = $this->pdo->prepare(
-                'INSERT INTO daily_stats (stat_date, placement_id, impressions, clicks, revenue_cents, updated_at)
-             VALUES (:stat_date, :placement_id, :impressions, :clicks, :revenue_cents, now())'
-            );
-
-            $delete = $this->pdo->prepare(
-                'DELETE FROM daily_stats WHERE stat_date = :date');
-            $delete->execute(['date' => $date]);
+                '
+                        INSERT 
+                        INTO daily_stats (stat_date, placement_id, impressions, clicks, revenue_cents, updated_at)
+                        VALUES (:stat_date, :placement_id, :impressions, :clicks, :revenue_cents, now())
+                        ON CONFLICT (stat_date, placement_id) 
+                        DO UPDATE SET
+                               impressions = EXCLUDED.impressions,
+                               clicks = EXCLUDED.clicks,
+                               revenue_cents = EXCLUDED.revenue_cents,
+                               updated_at = now()
+           ');
 
             foreach ($rows as $row) {
                 $insert->execute([
