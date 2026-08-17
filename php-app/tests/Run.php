@@ -6,6 +6,7 @@ require_once __DIR__ . '/TestHelper.php';
 require_once __DIR__ . '/PlacementTest.php';
 require_once __DIR__ . '/AggregationTest.php';
 require_once __DIR__ . '/TimezoneTest.php';
+require_once __DIR__ . '/StatEventTest.php';
 
 $tests = [];
 foreach (get_defined_functions()['user'] as $fn) {
